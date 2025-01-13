@@ -67,27 +67,6 @@ class Network:
     def addFluid(self,fluid):
         self._fluid = fluid
                     
-    def generateIncidenceMatrix(self):
-        self.incidence = np.zeros((len(self._nodes),len(self._edges)))
-        for n in self._nodes:
-            for e in self._edges:
-                if e._nodeFrom == n:
-                    self.incidence[n.ID, e.ID] = -1
-                    
-                elif e._nodeTo == n:
-                    self.incidence[n.ID, e.ID] = 1
-                      
-    
-    def generateAdjacencyMatrix(self):
-        self.adjacency = np.zeros((len(self._nodes),len(self._nodes)))
-        for n in self._nodes:
-            for e in self._edges:
-                if e._nodeFrom == n:
-                    self.adjacency[n.ID, e._nodeTo.ID] = 1
-                    
-                if e._nodeTo == n:
-                    self.adjacency[n.ID, e._nodeFrom.ID] = 1
-
     def generateConnectivityMatrix(self):
         self.connectivity = np.zeros((len(self._unodes),len(self._edges)))
         i = 0
@@ -101,6 +80,7 @@ class Network:
                     self.connectivity[n.ID, e.ID] = 1
                 j += 1
             i += 1
+        self.connectivity = np.transpose(self.connectivity)    
                 
     def generateFixedMatrix(self):
         self.fixed = np.zeros((len(self._fnodes),len(self._edges)))
@@ -114,7 +94,8 @@ class Network:
                 elif e._nodeTo == n:
                     self.fixed[i, j] = 1   
                 j += 1
-            i += 1                    
+            i += 1
+        self.fixed = np.transpose(self.fixed)                    
                      
 
 class Fliud:
@@ -153,12 +134,6 @@ print(len(net0._edges))
 print(len(net0._nodes))
 print(len(net0._unodes))
 print(len(net0._fnodes))
-
-net0.generateIncidenceMatrix()
-print(net0.incidence)
-
-net0.generateAdjacencyMatrix()
-print(net0.adjacency)
 
 net0.generateConnectivityMatrix()
 print(net0.connectivity)
