@@ -13,6 +13,7 @@ class Node:
         self._edges = []
         
         self.pressure = 1 # dmmy variable for development
+        self.previousPressure = self.pressure
         
         self.height  = 0 
         self.demand = 0   
@@ -44,6 +45,7 @@ class Node:
 class Edge:
     _nextID = 0
     # will need to pt a lot of the below into a type class (i.e. pipe, pmp, valve etc.)
+    
     def __init__(self,nodeFrom, nodeTo):
         self.ID = Edge._nextID
         self._nodeFrom = nodeFrom
@@ -228,10 +230,14 @@ class Network:
     
     def itterateHead(self):
         # itterate the head value
+        
+        i = 0
+        for n in self._unodes:
+            n.previousPressure = n.pressure
+            i += 1     
+        
         schur = np.linalg.inv(self.connectivity.transpose() @ np.linalg.inv(self.G) @ self.connectivity)
-        
         other = self.connectivity.transpose() @ ((1-2) * self.flowVector - np.linalg.inv(self.G) @ (self.fixed @ self.fixedHeadVector)) - 2 * self.demandVector
-        
         self.unkownHeadVector = schur @ other
         print(self.unkownHeadVector)
         
@@ -242,10 +248,31 @@ class Network:
         
     def itterateFlow(self):
         # itterate flow (after itterating head)
+        
+        i = 0
+        for e in self._edges:
+            e.previousFlowrate = e.flowrate
+            i += 1
+                           
         self.flowVector = (1-1/2)*self.flowVector + (1/2)*np.linalg.inv(self.G) @ (self.connectivity @ self.unkownHeadVector + self.fixed @ self.fixedHeadVector)
         print(self.flowVector)
         
+        i = 0
+        for e in self._edges:
+            e.flowrate = self.flowVector[i]
+            i += 1
+        
     def itterate(self):
+        
+        while True:
+            
+            
+            self.itterateHead()
+            self.itterateFlow()
+            
+            pressureError = e.previousFlowrate - e.flowrate
+            pressureError = e.previousFlowrate - e.flowrate
+            
         pass
         
         
