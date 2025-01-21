@@ -1,6 +1,8 @@
 
+from ast import Not, Str
 from numbers import Number
 from pydoc import doc
+from xml.etree.ElementTree import tostring
 import numpy as np
 
 
@@ -13,7 +15,7 @@ class Node:
         self._edges = []
         
         self.pressure = 1 # dmmy variable for development
-        self.previousPressure = self.pressure
+        self.previousPressure = self.pressure*0.9 # delib off set for intial itteration.
         
         self.height  = 0 
         self.demand = 0   
@@ -54,7 +56,7 @@ class Edge:
         self._network: Network = None
         
         self.flowrate = 0.1 # dmmy vale for development
-        self.previousFlowrate = self.flowrate # Initiallised to current flow rate
+        self.previousFlowrate = self.flowrate - 1 # Initiallised to a value of not the prev flow rate so first itteration works
         self.massFlowrate = None
         
         ## pipe related.
@@ -119,6 +121,7 @@ class Network:
         self._fluid: Fluid = None
         self.itterationCount = 0
         self.flowTolerance = 1e-4
+        self.pressureTolerance = 1e-4
                 
     def addEdge(self,edge):
         if edge not in self._edges:
@@ -206,7 +209,12 @@ class Network:
         self.G = np.multiply(self.resistances,np.abs(self.flowVector[:]))
         
     def generateNMatrix(self):
-        # this is the n matrix, to start it will be all N =2 
+        """ generates an N matrix based on the exponents required in the Jacobian for each edge
+            For each edges, it examines what exponent is used for flow (darcey = 2, hazen = 1.852)
+            and creates a diagonal matrix for each edge with that value of N.
+            
+            This is used as part of the jacobian (first derivative) and is thus used by 
+        """
         self.N = np.eye(len(self._edges),len(self._edges))
         
     def createFixedHeadVector(self):
@@ -215,7 +223,31 @@ class Network:
         for n in self._fnodes:
             self.fixedHeadVector[i] = n.pressure
             i += 1
-            
+    
+    def calculateFlowResidual(self):
+        self.flowResidual = np.zeros((len(self._edges),1))
+        i = 0
+        for e in self._edges:
+            self.flowResidual[i] = e.flowrate - e.previousFlowrate
+            i += 1
+        
+        max_res = np.abs(np.max(self.flowResidual))
+        print(f'max flow residual is: {max_res}')
+        return max_res
+    
+    def calculatePressureResidual(self):
+        self.pressureResidual = np.zeros((len(self._unodes),1))
+        i = 0
+        for n in self._unodes:
+            self.pressureResidual[i] = n.pressure - n.previousPressure
+            i += 1
+        
+        max_res = np.abs(np.max(self.pressureResidual))
+        print(f'max pressure residual is: {max_res}')
+        return max_res
+        
+        
+                
     def initialise(self):
         """Initialises all the matrices and vectors required for the calculation.
         """
@@ -231,11 +263,13 @@ class Network:
     def itterateHead(self):
         # itterate the head value
         
+        # first store the previous itterations pressures
         i = 0
         for n in self._unodes:
             n.previousPressure = n.pressure
             i += 1     
         
+        # note n = 2 at the moment. This needs to be refactored to use the n matrix and N matrix function.
         schur = np.linalg.inv(self.connectivity.transpose() @ np.linalg.inv(self.G) @ self.connectivity)
         other = self.connectivity.transpose() @ ((1-2) * self.flowVector - np.linalg.inv(self.G) @ (self.fixed @ self.fixedHeadVector)) - 2 * self.demandVector
         self.unkownHeadVector = schur @ other
@@ -253,7 +287,8 @@ class Network:
         for e in self._edges:
             e.previousFlowrate = e.flowrate
             i += 1
-                           
+        
+        # note n = 2 at the moment. This needs to be refactored to use the n matrix and N matrix function.                   
         self.flowVector = (1-1/2)*self.flowVector + (1/2)*np.linalg.inv(self.G) @ (self.connectivity @ self.unkownHeadVector + self.fixed @ self.fixedHeadVector)
         print(self.flowVector)
         
@@ -262,28 +297,26 @@ class Network:
             e.flowrate = self.flowVector[i]
             i += 1
         
-    def itterate(self):
-        
-        while True:
-            
-            
+    def itterate(self,ittLimit):
+        itterations = 0
+        while ( itterations<ittLimit and ((self.calculateFlowResidual() > self.flowTolerance) or (self.calculatePressureResidual() > self.pressureTolerance))):
+            print(f'Itterations: {itterations}')
+            net0.generateGMatrix()       
             self.itterateHead()
             self.itterateFlow()
-            
-            pressureError = e.previousFlowrate - e.flowrate
-            pressureError = e.previousFlowrate - e.flowrate
-            
-        pass
+            itterations += 1
+            print(net0.flowVector)
+            print(net0.unkownHeadVector)    
+            print(net0.fixedHeadVector)
         
-        
+            
 
 class Fluid:
     def __init__(self,density,viscosity):
         self.density = density
         self.viscosity = viscosity
-        
 
-
+# Set up the network
 net0 = Network()     
 
 fl0 = Fluid(1000,1*10**-3) 
@@ -311,30 +344,7 @@ net0.addEdge(e01)
 net0.addEdge(e12)
 net0.addEdge(e13)
 
-# print(len(net0._edges))
-# print(len(net0._nodes))
-# print(len(net0._unodes))
-# print(len(net0._fnodes))
+# initialise and run the simulation
 
 net0.initialise()
-
-print(net0.flowVector)
-net0.generateGMatrix()
-net0.itterateHead()
-net0.itterateFlow()
-
-net0.generateGMatrix()
-net0.itterateHead()
-net0.itterateFlow()
-
-net0.generateGMatrix()
-net0.itterateHead()
-net0.itterateFlow()
-
-net0.generateGMatrix()
-net0.itterateHead()
-net0.itterateFlow()
-
-net0.generateGMatrix()
-net0.itterateHead()
-net0.itterateFlow()
+net0.itterate(10)
