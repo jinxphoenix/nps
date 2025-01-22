@@ -1,10 +1,6 @@
 
-from ast import Not, Str
-from numbers import Number
-from pydoc import doc
-from xml.etree.ElementTree import tostring
+from Pipe import Pipe
 import numpy as np
-
 
 
 class Node:
@@ -42,13 +38,14 @@ class Node:
     def setDemand(self,demand):
         self.demand = demand
             
-            
+    
+               
 
 class Edge:
     _nextID = 0
     # will need to pt a lot of the below into a type class (i.e. pipe, pmp, valve etc.)
     
-    def __init__(self,nodeFrom, nodeTo):
+    def __init__(self,nodeFrom, nodeTo, model):
         self.ID = Edge._nextID
         self._nodeFrom = nodeFrom
         self._nodeTo = nodeTo
@@ -59,19 +56,8 @@ class Edge:
         self.previousFlowrate = self.flowrate - 1 # Initiallised to a value of not the prev flow rate so first itteration works
         self.massFlowrate = None
         
-        ## pipe related.
-        
-        self.rougness = 1*10**-5  #dmmy vale for development
-        self.length = 100 # dmmy vale for development
-        self.hydraulicDiameter = None
-        self.area = None    
-        
-        self.reynolds = None
-        self.frictionFactor = 1
-        self.resistance = None
-        self.gravity = 9.81
-        
-        self.setDiameter(0.045)  #dmmy vale for development
+        self.model: Pipe = model
+                
         
     def attachFromNode(self):
         self._nodeFrom.attachEdge(self)
@@ -80,37 +66,10 @@ class Edge:
         self._nodeTo.attachEdge(self)
         
     def addNetwork(self,network):
-        self._network = network
-    
-    ## pipe related.
-    
-    def setDiameter(self,diameter):
-        self.hydraulicDiameter = diameter
-        self.calculateArea()
-         
-    def calculateArea(self):
-        self.area = np.pi*self.hydraulicDiameter/4
-        
-    def updateReynolds(self):
-        #self.reynolds = self.massFlowrate * self.hydraulicDiameter /(self._network._fluid.viscosity * self.area )
-        self.reynolds = self.flowrate * self.hydraulicDiameter * self._network._fluid.density /(self._network._fluid.viscosity * self.area)
-         
-    def updatefrictionFactor(self):
-        self.updateReynolds()
-        if self.reynolds > 2000:
-            a = self.rougness/(3.7*self.hydraulicDiameter)
-            b = 2.51 / (self.rougness*np.sqrt(self.frictionFactor))
-            c = -2*np.log10(a + b)
-            self.frictionFactor = (1/c)**2
-        else:
-            self.frictionFactor = 64/self.reynolds
-            
+        self._network = network       
+
     def updateResistance(self):
-        self.updatefrictionFactor()
-        self.resistance = (8 * self.frictionFactor * self.length) / (np.pi**2 * self.gravity *  self.hydraulicDiameter**5)
-        return self.resistance            
-
-
+        return self.model.updateResistance()
 
 class Network:
     def __init__(self):
@@ -193,7 +152,7 @@ class Network:
             i += 1
             
     def createDemandVector(self):
-        self.demandVector = np.zeros((len(self._edges),1))
+        self.demandVector = np.zeros((len(self._unodes),1))
         i = 0
         for n in self._unodes:
             self.demandVector[i] = n.demand
@@ -271,7 +230,9 @@ class Network:
         
         # note n = 2 at the moment. This needs to be refactored to use the n matrix and N matrix function.
         schur = np.linalg.inv(self.connectivity.transpose() @ np.linalg.inv(self.G) @ self.connectivity)
-        other = self.connectivity.transpose() @ ((1-2) * self.flowVector - np.linalg.inv(self.G) @ (self.fixed @ self.fixedHeadVector)) - 2 * self.demandVector
+        other1 = self.connectivity.transpose() @ ((1-2) * self.flowVector - np.linalg.inv(self.G) @ (self.fixed @ self.fixedHeadVector))
+        other2 =  - 2 * self.demandVector
+        other = (other1 + other2)
         self.unkownHeadVector = schur @ other
         print(self.unkownHeadVector)
         
@@ -325,13 +286,19 @@ n0 = Node()
 n1 = Node()
 n2 = Node()
 n3 = Node()
+n4 = Node()
 
-e01 = Edge(n0,n1)
-e12 = Edge(n1,n2)
-e13 = Edge(n1,n3)
+p = Pipe(1*10**-5,100,0.05)
+
+e01 = Edge(n0,n1,p)
+e12 = Edge(n1,n2,p)
+e13 = Edge(n1,n3,p)
+e14 = Edge(n1,n4,p)
 
 n2.setDemand(10/3600)
 n3.setDemand(5/3600)
+# n4.setFixedPressure(10)
+n4.setDemand(5/3600)
 n0.setFixedPressure(20)
 
 net0.addFluid(fl0)
@@ -339,10 +306,12 @@ net0.addNode(n0)
 net0.addNode(n1)
 net0.addNode(n2)
 net0.addNode(n3)
+net0.addNode(n4)
 
 net0.addEdge(e01)
 net0.addEdge(e12)
 net0.addEdge(e13)
+net0.addEdge(e14)
 
 # initialise and run the simulation
 
