@@ -39,8 +39,6 @@ class Node:
         self.demand = demand
             
     
-               
-
 class Edge:
     _nextID = 0
     # will need to pt a lot of the below into a type class (i.e. pipe, pmp, valve etc.)
@@ -69,7 +67,8 @@ class Edge:
         self._network = network       
 
     def updateResistance(self):
-        return self.model.updateResistance()
+        return self.model.updateResistance(self.flowrate)
+
 
 class Network:
     def __init__(self):

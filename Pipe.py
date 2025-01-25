@@ -39,7 +39,8 @@ class Pipe(PartialPipe):
         else:
             self.frictionFactor = 64/self.reynolds
             
-    def updateResistance(self):
+    def updateResistance(self,flowrate):
+        self.flowrate = flowrate
         self.updatefrictionFactor()
         self.resistance = (8 * self.frictionFactor * self.length) / (np.pi**2 * self.gravity *  self.hydraulicDiameter**5)
         return self.resistance            
