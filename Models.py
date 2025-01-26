@@ -1,5 +1,8 @@
 
+from enum import Enum
 import numpy as np
+
+from test import N
 
 class Node:
     _nextID = 0
@@ -48,9 +51,10 @@ class Edge:
         Edge._nextID += 1 
         self._network: Network = None
         
+        self.status = None
         self.flowrate = 0.1 # dmmy vale for development
         self.previousFlowrate = self.flowrate - 1 # Initiallised to a value of not the prev flow rate so first itteration works
-        self.massFlowrate = None
+        self.N_value = 1
                   
     def attachFromNode(self):
         self._nodeFrom.attachEdge(self)
@@ -60,10 +64,15 @@ class Edge:
         
     def addNetwork(self,network):
         self._network = network
+        
+    def setExponent(self,*args):
+        pass
     
     def updatefrictionFactor(self):
         pass   
-
+ 
+class Status(Enum):
+    pass
   
 class Pipe(Edge):
     
@@ -80,8 +89,11 @@ class Pipe(Edge):
         self.frictionFactor = 1
         self.resistance = None
         self.gravity = 9.81
-
+        self.k_value = 0
+        self.minorResistance = 0
+        
         self.calculateArea()
+        self.setExponent()
         
     def setDiameter(self,diameter):
         self.hydraulicDiameter = diameter
@@ -90,6 +102,15 @@ class Pipe(Edge):
     def calculateArea(self):
         self.area = np.pi*self.hydraulicDiameter/4
         
+    def setKValue(self,k_value):
+        self.k_value = k_value
+    
+    def setExponent(self):
+        self.N_value = 2
+        
+    def calculateMinorLosses(self):
+        self.minorResistance = self.k_value * 8 / (np.pi * self.gravity * self.hydraulicDiameter**4)   
+        
     def updateReynolds(self):
         #self.reynolds = self.massFlowrate * self.hydraulicDiameter /(self._network._fluid.viscosity * self.area )
         self.reynolds = self.flowrate * self.hydraulicDiameter * self._network._fluid.density /(self._network._fluid.viscosity * self.area)
@@ -97,18 +118,28 @@ class Pipe(Edge):
     def updatefrictionFactor(self):
         self.updateReynolds()
         if self.reynolds > 2000:
+            # Use the colbrook Equation
             a = self.roughness/(3.7*self.hydraulicDiameter)
             b = 2.51 / (self.roughness*np.sqrt(self.frictionFactor))
             c = -2*np.log10(a + b)
             self.frictionFactor = (1/c)**2
         else:
+            # Use the laminar value
             self.frictionFactor = 64/self.reynolds
             
     def updateResistance(self):
         self.updatefrictionFactor()
-        self.resistance = (8 * self.frictionFactor * self.length) / (np.pi**2 * self.gravity *  self.hydraulicDiameter**5)
+        self.calculateMinorLosses()
+        self.resistance = (8 * self.frictionFactor * self.length) / (np.pi**2 * self.gravity *  self.hydraulicDiameter**5) + self.minorResistance
         return self.resistance       
     
+class Pump(Edge): 
+    pass
+
+
+class Component(Edge):
+    pass
+
     
 class Fluid:
     def __init__(self,density,viscosity):
@@ -153,6 +184,7 @@ class Network:
                 if e._nodeFrom == n:
                     self.connectivity[i, j] = 1
                     
+                    
                 elif e._nodeTo == n:
                     self.connectivity[i, j] = -1
                 j += 1
@@ -169,8 +201,10 @@ class Network:
                 if e._nodeFrom == n:
                     self.fixed[i, j] = 1
                     
+                    
                 elif e._nodeTo == n:
                     self.fixed[i, j] = -1   
+                    
                 j += 1
             i += 1
         self.fixed = np.transpose(self.fixed)
@@ -206,7 +240,7 @@ class Network:
     def generateGMatrix(self):
         # this is the G matrix
         
-        # regenerate the resistance
+        # regenerate the resistances for each eage
         self.generateResistanceMatrix()
         
         # then create the G matrix
@@ -220,6 +254,10 @@ class Network:
             This is used as part of the jacobian (first derivative) and is thus used by 
         """
         self.N = np.eye(len(self._edges),len(self._edges))
+        i = 0
+        for e in self._edges:
+            self.N[i,i] = e.N_value
+            i += 1
         
     def createFixedHeadVector(self):
         self.fixedHeadVector = np.zeros((len(self._fnodes),1))
@@ -273,12 +311,20 @@ class Network:
             n.previousPressure = n.pressure
             i += 1     
         
+        Neye = np.eye(np.size(self.N,0))
+        
         # note n = 2 at the moment. This needs to be refactored to use the n matrix and N matrix function.
         schur = np.linalg.inv(self.connectivity.transpose() @ np.linalg.inv(self.G) @ self.connectivity)
-        other1 = self.connectivity.transpose() @ ((1-2) * self.flowVector - np.linalg.inv(self.G) @ (self.fixed @ self.fixedHeadVector))
-        other2 =  - 2 * self.demandVector
-        other = (other1 + other2)
-        self.unkownHeadVector = schur @ other
+        
+        print("shur:\n")
+        print(schur)
+        
+        part = self.connectivity.transpose() @ ((1-2) * self.flowVector - np.linalg.inv(self.G) @ (self.fixed @ self.fixedHeadVector)) - 2 * self.demandVector
+        
+        print("part:\n")
+        print(part)
+
+        self.unkownHeadVector = schur @ part
         print(self.unkownHeadVector)
         
         i = 0
@@ -294,8 +340,9 @@ class Network:
             e.previousFlowrate = e.flowrate
             i += 1
         
-        # note n = 2 at the moment. This needs to be refactored to use the n matrix and N matrix function.                   
-        self.flowVector = (1-1/2)*self.flowVector + (1/2)*np.linalg.inv(self.G) @ (self.connectivity @ self.unkownHeadVector + self.fixed @ self.fixedHeadVector)
+        Neye = np.eye(np.size(self.N,0))
+                 
+        self.flowVector = (Neye-np.linalg.inv(self.N)) @ self.flowVector + np.linalg.inv(self.N) @ np.linalg.inv(self.G) @ (self.connectivity @ self.unkownHeadVector + self.fixed @ self.fixedHeadVector)
         print(self.flowVector)
         
         i = 0
