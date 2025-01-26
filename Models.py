@@ -2,8 +2,6 @@
 from enum import Enum
 import numpy as np
 
-from test import N
-
 class Node:
     _nextID = 0
     def __init__(self):
@@ -109,7 +107,7 @@ class Pipe(Edge):
         self.N_value = 2
         
     def calculateMinorLosses(self):
-        self.minorResistance = self.k_value * 8 / (np.pi * self.gravity * self.hydraulicDiameter**4)   
+        self.minorResistance = self.k_value * 8 / (self.gravity * np.pi**2 * self.hydraulicDiameter**4)   
         
     def updateReynolds(self):
         #self.reynolds = self.massFlowrate * self.hydraulicDiameter /(self._network._fluid.viscosity * self.area )
@@ -175,35 +173,34 @@ class Network:
         self._fluid = fluid
                     
     def generateConnectivityMatrix(self):
-        # this is the A1 matrix num edges x bum unkown pressure nodes
+        # this is the A12 matrix num edges x bum unkown pressure nodes
         self.connectivity = np.zeros((len(self._unodes),len(self._edges)))
         i = 0
         for n in self._unodes:
             j = 0
             for e in self._edges:
                 if e._nodeFrom == n:
-                    self.connectivity[i, j] = 1
-                    
-                    
-                elif e._nodeTo == n:
                     self.connectivity[i, j] = -1
+                                        
+                elif e._nodeTo == n:
+                    self.connectivity[i, j] = 1
                 j += 1
             i += 1
         self.connectivity = np.transpose(self.connectivity)    
                 
     def generateFixedMatrix(self):
-        # this is the A2 matri
+        # this is the A10 matri
         self.fixed = np.zeros((len(self._fnodes),len(self._edges)))
         i = 0
         for n in self._fnodes:
             j = 0
             for e in self._edges:
                 if e._nodeFrom == n:
-                    self.fixed[i, j] = 1
+                    self.fixed[i, j] = -1
                     
                     
                 elif e._nodeTo == n:
-                    self.fixed[i, j] = -1   
+                    self.fixed[i, j] = 1   
                     
                 j += 1
             i += 1
@@ -237,14 +234,21 @@ class Network:
             self.demandVector[i] = n.demand
             i += 1
     
-    def generateGMatrix(self):
-        # this is the G matrix
-        
-        # regenerate the resistances for each eage
+    def generateA11Matrix(self):
+        # this is the A11 matrix, which is the resistances multipled by the prev itteration flows
         self.generateResistanceMatrix()
+        Qabs = np.abs(self.flowVector)
+        
+        # create the diagonal matrix by multiplying row wise, the resistance matrix with the abs flow vector
+        self.A11 = np.multiply(self.resistances, Qabs[:])
+        
+    def generateGMatrix(self):
+        # this is the G matrix (it is A11 frotn matrix multiplied with the N matrix.)
+        self.generateA11Matrix()
         
         # then create the G matrix
-        self.G = np.multiply(self.resistances,np.abs(self.flowVector[:]))
+        self.G = self.N @ self.A11
+        # print(f'G vector:\n{self.G}')
         
     def generateNMatrix(self):
         """ generates an N matrix based on the exponents required in the Jacobian for each edge
@@ -296,11 +300,13 @@ class Network:
         
         self.generateConnectivityMatrix()
         self.generateFixedMatrix()
-        self.createFlowVector()
+        self.generateNMatrix()     
         self.createDemandVector()
-        self.generateNMatrix()
-        self.createUnkownHeadVector()
         self.createFixedHeadVector()
+        
+        self.createFlowVector()
+        self.createUnkownHeadVector()
+        
     
     def itterateHead(self):
         # itterate the head value
@@ -310,22 +316,16 @@ class Network:
         for n in self._unodes:
             n.previousPressure = n.pressure
             i += 1     
-        
-        Neye = np.eye(np.size(self.N,0))
-        
+                    
         # note n = 2 at the moment. This needs to be refactored to use the n matrix and N matrix function.
-        schur = np.linalg.inv(self.connectivity.transpose() @ np.linalg.inv(self.G) @ self.connectivity)
-        
-        print("shur:\n")
-        print(schur)
-        
-        part = self.connectivity.transpose() @ ((1-2) * self.flowVector - np.linalg.inv(self.G) @ (self.fixed @ self.fixedHeadVector)) - 2 * self.demandVector
-        
-        print("part:\n")
-        print(part)
+        A = self.connectivity.transpose() @ np.linalg.inv(self.G) @ self.connectivity
+        b = -( self.connectivity.transpose() @ np.linalg.inv(self.G) @ (self.A11 @ self.flowVector + self.fixed @ self.fixedHeadVector) - (self.connectivity.transpose() @ self.flowVector - self.demandVector)  )
+               
+        # print(f"A:\n {A}")
+        # print(f"b:\n {b}")
 
-        self.unkownHeadVector = schur @ part
-        print(self.unkownHeadVector)
+        self.unkownHeadVector = np.linalg.inv(A) @ b
+        print(f'unkown Head vector:\n{self.unkownHeadVector}')
         
         i = 0
         for n in self._unodes:
@@ -340,10 +340,12 @@ class Network:
             e.previousFlowrate = e.flowrate
             i += 1
         
+        # create I matrix same size as N
         Neye = np.eye(np.size(self.N,0))
                  
-        self.flowVector = (Neye-np.linalg.inv(self.N)) @ self.flowVector + np.linalg.inv(self.N) @ np.linalg.inv(self.G) @ (self.connectivity @ self.unkownHeadVector + self.fixed @ self.fixedHeadVector)
-        print(self.flowVector)
+        self.flowVector = (Neye - np.linalg.inv(self.G) @ self.A11) @ self.flowVector - np.linalg.inv(self.G) @ (self.connectivity @ self.unkownHeadVector + self.fixed @ self.fixedHeadVector)
+        
+        print(f'flow vector:\n{self.flowVector}')
         
         i = 0
         for e in self._edges:
@@ -358,5 +360,3 @@ class Network:
             self.itterateHead()
             self.itterateFlow()
             itterations += 1
-
-

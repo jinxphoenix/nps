@@ -44,4 +44,4 @@ net0.addEdge(e45)
 # initialise and run the simulation
 
 net0.initialise()
-net0.itterate(1)
+net0.itterate(10)
