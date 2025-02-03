@@ -1,7 +1,7 @@
 
 from enum import Enum
 import numpy as np
-from Flows.types import PipeStatus
+# from Flows.types import PipeStatus
 
 class Fluid:
     def __init__(self,density,viscosity):
@@ -300,7 +300,7 @@ class Network:
                 j += 1
             i += 1
         self.fixed = np.transpose(self.fixed)
-        
+      
     def generateResistanceMatrix(self):
         self.resistances = np.zeros((len(self._edges),len(self._edges)))
         i = 0
@@ -318,10 +318,13 @@ class Network:
             i += 1
     
     def createUnkownHeadVector(self):
+        """Create a vector of unkown head nodes
+        for each node in the unkown heads list, get the nodes pressure, and add the height to the node.
+        """
         self.unkownHeadVector = np.zeros((len(self._unodes),1))
         i = 0
         for n in self._unodes:
-            self.unkownHeadVector[i] = n.pressure
+            self.unkownHeadVector[i] = n.pressure + n.height
             i += 1
              
     def createFlowVector(self):
@@ -378,10 +381,13 @@ class Network:
             i += 1
         
     def createFixedHeadVector(self):
+        """Create a vector of the fixed heads in the network
+        For each node in the fixed head node list, add to the fixed head node vector, and add the grade height of node to teh pressure
+        """
         self.fixedHeadVector = np.zeros((len(self._fnodes),1))
         i = 0
         for n in self._fnodes:
-            self.fixedHeadVector[i] = n.pressure
+            self.fixedHeadVector[i] = n.pressure + n.height
             i += 1
     
     def calculateFlowResidual(self):
@@ -441,7 +447,7 @@ class Network:
         # print(f"A:\n {A}")
         # print(f"b:\n {b}")
 
-        self.unkownHeadVector = np.linalg.inv(A) @ b
+        self.unkownHeadVector = np.linalg.inv(A) @ b 
         print(f'unkown Head vector:\n{self.unkownHeadVector}')
         
         i = 0

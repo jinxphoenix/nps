@@ -1,5 +1,4 @@
 
-from operator import ne
 from Models import Node, Pipe, Fluid, Network, Pump
 
 # Set up the network
@@ -27,6 +26,8 @@ n0.setFixedPressure(20)
 n3.setFixedPressure(30)
 # n5.setFixedPressure(5)
 # e14.set_k_value(2)
+# n0.setHeight(5)
+n3.setHeight(20)
 
 net0.addFluid(fl0)
 net0.addNode(n0)
